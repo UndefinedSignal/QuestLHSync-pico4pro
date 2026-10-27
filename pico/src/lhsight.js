@@ -7,8 +7,10 @@ var MAX_MS = parseInt("@DUR@");
 // rings that pvrtrackingservice maps: 32 buffers of 618496 bytes (151 pages: a 1280-byte embedded-data row with the
 // frame counter, then the 480 image rows), 8 per camera, allocated camera by camera. CAMMAP gives the camera id of each
 // ring in buffer order ("g0,g1,g2,g3" -> the ids in the camera calibration); lhsyncd fills it in from cammap.txt.
+// On a PICO 4 Pro (5.13.3, checked by covering each camera) the rings come in reverse: bottom-left (cam3),
+// bottom-right (cam2), top-right (cam1), top-left (cam0); the calibration's IMU frame has x up, y left, z back.
 var CAMMAP_SPEC = "@CAMMAP@";
-var CAMMAP = (CAMMAP_SPEC.charAt(0) === "@" ? "0,1,2,3" : CAMMAP_SPEC).split(",").map(function (v) { return parseInt(v, 10); });
+var CAMMAP = (CAMMAP_SPEC.charAt(0) === "@" ? "3,2,1,0" : CAMMAP_SPEC).split(",").map(function (v) { return parseInt(v, 10); });
 var BUF = 618496, W = 640, H = 480, HDR = 1280, NCAM = 4;
 var l = Process.getModuleByName("libc.so"), g = function (n) { return l.getExportByName(n); };
 var fopen = new NativeFunction(g("fopen"), "pointer", ["pointer", "pointer"]);

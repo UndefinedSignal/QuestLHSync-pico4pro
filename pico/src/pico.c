@@ -346,12 +346,12 @@ static pid_t hal_pid(void) {
   return found;
 }
 
-// cammap.txt in the module dir: the camera id of each ring in buffer order, "0,1,2,3" until it's been checked
+// cammap.txt in the module dir: the camera id of each ring in buffer order ("3,2,1,0" on a PICO 4 Pro)
 static void cammap(char *out, size_t n) {
   char path[512];
   snprintf(path, sizeof path, "%s/cammap.txt", moddir);
   char *s = read_file(path, NULL);
-  snprintf(out, n, "0,1,2,3");
+  snprintf(out, n, "3,2,1,0");
   if (!s) return;
   size_t k = 0;
   for (const char *p = s; *p && k + 1 < n; p++)
