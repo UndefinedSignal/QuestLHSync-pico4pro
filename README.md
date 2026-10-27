@@ -18,6 +18,10 @@ Galaxy XR support is by [@stearnsbq](https://github.com/stearnsbq), with the
 [questlhsync-galaxy-xr](https://github.com/stearnsbq/questlhsync-galaxy-xr)
 headset module.
 
+**This fork** adds the **PICO 4 Pro** (experimental): a Magisk module for the
+headset (`pico/`) and PICO support in the SteamVR driver. See
+[pico/README.md](pico/README.md) for its install and first run.
+
 ![The QuestLHSync dashboard page](docs/dashboard.png)
 
 ## Requirements
@@ -26,6 +30,8 @@ headset module.
   [Magisk](https://github.com/topjohnwu/Magisk).
 - Or a **Steam Frame**. No root, no developer password: everything installs as
   your user.
+- Or a **PICO 4 Pro**, rooted with Magisk (this fork, experimental: see
+  [pico/README.md](pico/README.md)).
 - **SteamVR base stations**, 1.0 or 2.0.
 - **Windows with SteamVR**, with the headset streamed by anything: Steam Link,
   Link, Air Link, Virtual Desktop, ALVR, CreoleCast...
@@ -174,6 +180,7 @@ build.bat                        SteamVR driver + dashboard app (SteamVR closed)
 build.bat installer              only the installer
 python magisk\build_module.py    Quest module (Magisk), into out\
 python frame\build.py            Steam Frame package, into out\
+python pico\build_module.py      PICO 4 Pro module (Magisk; pip install ziglang), into out\
 python release.py                the release files, into out\release-<version>\
 python install.py                register driver\questlhsync with SteamVR
 python install.py headset        install the module over adb, no reboot
