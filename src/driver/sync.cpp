@@ -160,16 +160,13 @@ bool Optics::Load(const std::string &json, std::string *err) {
     for (int r = 0; r < 3; r++) for (int q = 0; q < 3; q++) Rhi.m[r][q] = 0;
     Rhi.m[0][1] = -1; Rhi.m[1][0] = 1; Rhi.m[2][2] = 1;
     V3 o{kPicoHeadInImu[0], kPicoHeadInImu[1], kPicoHeadInImu[2]};
-    int up = 0;
     for (int i = 0; i < kMaxCam; i++) {
       if (!out[i].valid) continue;
       out[i].R = Rhi * out[i].R;
       out[i].t = Rhi * (out[i].t - o);
-      up += out[i].R.m[1][2] > kUpward;
     }
-    // as on the Frame: the lower pair looks down at the floor and the hands, the base stations hang above
-    if (up)
-      for (int i = 0; i < kMaxCam; i++) out[i].use = out[i].valid && out[i].R.m[1][2] > kUpward;
+    // all four are used: the lower pair (40 deg down) still catches base stations a little above the head near its
+    // image's top edge, and the PICO's laser sightings are few (a recording: the lower pair had 2/5 of them)
   }
   for (int i = 0; i < kMaxCam; i++) cams_[i] = out[i];
   const JVal *dev = root.get("Device"), *type = dev ? dev->get("DeviceType") : nullptr;
@@ -1455,7 +1452,7 @@ bool Solver::Acquire(double now, X4 &best, int &bs, int &tight) {
   std::vector<std::string> keys;
   std::vector<V3> S, Z;
   Stations(keys, S, Z);
-  Rays all = GetRays(std::max(now - ACQ_WIN, since_)), r = Bright(all);
+  Rays all = GetRays(std::max(now - acq_win_, since_)), r = Bright(all);
   acq_dim_ = r.size() == all.size() && std::count(all.B.begin(), all.B.end(), 0) > 0;
   if (S.size() < 2 || r.size() < 30) return false;
   Rays t = Thin(r);
@@ -1527,7 +1524,7 @@ int Solver::ThinnedScore(const X4 &x, double now) {
   std::vector<std::string> keys;
   std::vector<V3> S, Z;
   Stations(keys, S, Z);
-  Rays t = Thin(Bright(GetRays(std::max(now - ACQ_WIN, since_))));
+  Rays t = Thin(Bright(GetRays(std::max(now - acq_win_, since_))));
   if (!t.size()) return 0;
   std::vector<int> c;
   Support(x, S, Z, t, INLIER, c);
@@ -2171,7 +2168,7 @@ StepStat Solver::Step(double /*now*/) {
     return st;
   }
   double now = seen_ = newest;
-  starved_ = Starved(GetRays(std::max(now - ACQ_WIN, since_)));
+  starved_ = Starved(GetRays(std::max(now - acq_win_, since_)));
   StepStat st;
   if (!S.empty() && has_x_) {
     Rays r = GetRays(std::max(now - WIN, since_));
@@ -2661,7 +2658,7 @@ void Sync::Retime(double old_e, double new_e) {
     double t = r.tg - new_e, w;
     M3 R;
     V3 p;
-    if (!poses_.At(t, R, p) || !poses_.Speed(t, w) || poses_.Still(t) || w > kWmax) continue;
+    if (!poses_.At(t, R, p) || !poses_.Speed(t, w) || poses_.Still(t) || w > Wmax()) continue;
     T.push_back(t);
     O.push_back(p + R * r.od);
     D.push_back(R * r.dd);
@@ -2802,6 +2799,10 @@ bool Sync::SetCalibration(const std::string &json, std::string *err) {
   // a Quest's frame period is one of two, the other headsets' are learned from their frames
   grid_quest_ = optics_.headset() == Optics::kQuest && !cfg_.learn_grid;
   solver_.SetDimDots(optics_.headset() == Optics::kFrame);
+  // the PICO's short frames catch a laser a few times a minute per station (a Quest's many times that): acquisition
+  // looks further back
+  solver_.SetAcqWin(optics_.headset() == Optics::kPico ? kPicoAcqWin : Solver::ACQ_WIN);
+  if (optics_.headset() == Optics::kPico && !timing_learned_ && !cfg_.arrival_clock) expo_ = kExpoPico;
   grid_ = FrameGrid(grid_quest_);
   grid_logged_.clear();
   return true;
@@ -2892,7 +2893,7 @@ void Sync::ApplyTiming() {
     timing_learned_ = true;
     log_(Fmt("timing for %s: %.1f ms (learned before)", streamer_.c_str(), it->second * 1000));
   } else {
-    expo_ = cfg_.arrival_clock ? kExpoArrival : kExpoDefault;
+    expo_ = cfg_.arrival_clock ? kExpoArrival : optics_.headset() == Optics::kPico ? kExpoPico : kExpoDefault;
     timing_learned_ = false;
   }
 }
@@ -3092,6 +3093,25 @@ void Sync::OnLine(double pc, const char *line) {
   spots_.frames++;
   spots_.seen += nb;
   if (!have_optics_) { spots_.other += nb; return; }
+  if (optics_.headset() == Optics::kPico) {
+    // the PICO's short frames saturate small LED lamps as well as the lasers (its laser dots are the bigger ones, 15-50
+    // px, but a lamp's can grow as big): a lamp is there in the frame before too, a laser hardly ever
+    auto &pv = prev_short_[cam];
+    bool consecutive = pv.first > 0 && hs > pv.first && hs - pv.first < kSteadyGap;
+    std::vector<Spot> keep;
+    for (const Spot &b : bl) {
+      bool steady = false;
+      if (consecutive)
+        for (const Spot &q : pv.second)
+          if (std::abs(q.x10 - b.x10) < kSteadyR10 && std::abs(q.y10 - b.y10) < kSteadyR10) { steady = true; break; }
+      if (steady) spots_.steady++;
+      else keep.push_back(b);
+    }
+    pv.first = hs;
+    pv.second = bl;
+    bl.swap(keep);
+    nb = (int)bl.size();
+  }
   double hg = have_lag ? hs - lag : std::numeric_limits<double>::quiet_NaN();  // frame time, headset clock
   if (have_lag && grid_.period(cam) > 0) solver_.SetFramePeriod(grid_.period(cam));
   double grid_pc;
@@ -3137,7 +3157,7 @@ void Sync::Use(const Shot &f) {
   if (still) { spots_.still += nb; return; }
   M3 Rc;
   V3 tc;
-  if (have_lag && w <= kWmax && optics_.Pose(cam, Rc, tc)) solver_.AddFrame(t, hg, cam, p + R * tc, R * Rc);
+  if (have_lag && w <= Wmax() && optics_.Pose(cam, Rc, tc)) solver_.AddFrame(t, hg, cam, p + R * tc, R * Rc);
   for (const Spot &b : bl) {
     int x10 = b.x10, y10 = b.y10, npx = b.npx;
     if (npx > kMaxPx) { spots_.big++; continue; }
@@ -3149,7 +3169,7 @@ void Sync::Use(const Shot &f) {
       fprintf(g_ray_dump, "R %.6f %d %.6f %.6f %.6f %.7f %.7f %.7f %.6f %.6f %.6f %.1f %d\n", t, cam, O.x, O.y, O.z, D.x,
               D.y, D.z, p.x, p.y, p.z, w, b.peak);
     }
-    if (w > kWmax) { spots_.fast++; continue; }
+    if (w > Wmax()) { spots_.fast++; continue; }
     bool bright = b.peak >= kBright;
     solver_.Add(t, p + R * o, R * d, hg, cam, bright);  // dim ones too: they tell when the room is too light
     if (bright || solver_.starved()) spots_.used++;
@@ -3165,6 +3185,7 @@ std::string Sync::Describe(const Spots &a, const Spots &b) {
   part(b.still - a.still, "while the headset was still");
   part(b.fast - a.fast, "while it turned fast");
   part(b.big - a.big, "lamps or windows");
+  part(b.steady - a.steady, "steady lights, there in the frame before too");
   part(b.other - a.other, "without a headset pose");
   part(b.dim - a.dim, "dim, kept for a room too light for the dots to saturate");
   return Fmt("%ld bright spots, %ld used", n, b.used - a.used) + (why.empty() ? "" : " (" + why + ")");

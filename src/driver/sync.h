@@ -37,7 +37,10 @@ constexpr double kLagFallback = 0.005;  // s, typical poll lag while the frame g
 constexpr double kExpoArrival = 0.020;  // s, grid -> exposure with the arrival-envelope clock (logs without round trips)
 constexpr double kExpoDefault = 0.018;  // s, grid -> pose time with the round-trip clock, before it's learned
                                         // (CreoleCast learns 18.5, a replayed streamer 20.8)
+constexpr double kExpoPico = 0.025;     // s, the same for a PICO's footer-stamped frames (a recording's sightings: 25-30)
+constexpr double kPicoAcqWin = 300.0;   // s, a PICO's acquisition window (Solver::ACQ_WIN otherwise)
 constexpr double kWmax = 60.0;          // deg/s: sightings while the head turns faster are skipped
+constexpr double kWmaxPico = 100.0;     // deg/s: a PICO's (Sync::Wmax)
 constexpr double kNearDeg = 5.0;        // deg: a fast-head sighting this close to a base station counts for timing
 constexpr int kTimingFirstN = 200;      // such sightings before the first (wide) timing estimate
 constexpr int kTimingNextN = 40;        // ... before each later one
@@ -57,6 +60,8 @@ constexpr int kMaxPx = 400;             // bigger blobs are lamps/windows, not a
 // the running fit only within Solver::INLIER of a station
 constexpr int kBright = 250;
 constexpr int kLampPx = 20;             // blobs this big are steady lights (the frozen-pose check)
+constexpr double kSteadyGap = 0.06;     // s: PICO short frames 40 ms apart are consecutive ...
+constexpr int kSteadyR10 = 200;         // ... and a spot within 20 px of one in the frame before is a steady light
 // a camera frame whose head pose hasn't come in yet waits for it this long: a learned timing can put the pose time
 // after the frame's arrival (the Frame's Steam Link: -6 ms, the newest pose then a few ms short of it)
 constexpr double kPoseWait = 0.1;       // s
@@ -336,6 +341,7 @@ class Solver {
   StepStat Step(double now);
   bool has_x() const { return has_x_; }
   void SetDimDots(bool on) { dim_dots_ = on; }  // see dim_dots_
+  void SetAcqWin(double s) { acq_win_ = s; }  // s of sightings an acquisition looks at (ACQ_WIN, longer on a PICO)
   bool starved() const { return starved_; }
   int resets() const { return resets_; }
   X4 x() const { return x_; }
@@ -403,6 +409,7 @@ class Solver {
   // stations dim, while the bright spots were mostly other lights), so the dim ones always count, as in a room too light
   // (Starved)
   std::atomic<bool> dim_dots_{false};
+  std::atomic<double> acq_win_{ACQ_WIN};
   double DimGate() const { return starved_ ? INLIER : -1; }
   int amb_state_ = 0;        // the mirror check's last outcome, logged when it changes
   double kept_said_ = -1e18;  // the last log of a far acquisition the worn devices turned down
@@ -515,7 +522,7 @@ class Sync {
   };
   Status GetStatus(double now);
   // the cameras' bright spots so far, and what became of them
-  struct Spots { long frames = 0, seen = 0, used = 0, still = 0, fast = 0, big = 0, other = 0, dim = 0; };
+  struct Spots { long frames = 0, seen = 0, used = 0, still = 0, fast = 0, big = 0, other = 0, dim = 0, steady = 0; };
   Spots spots() { std::lock_guard<std::mutex> g(net_); return spots_; }
   static std::string Describe(const Spots &from, const Spots &to);
   void StationsForDump(std::vector<std::string> &keys, std::vector<V3> &S) const {  // tools
@@ -567,9 +574,15 @@ class Sync {
   long img_moved_ = 0, img_still_ = 0;  // under net_: of those, while SteamVR's headset stands still
   // under net_: short frames waiting for their head pose (kPoseWait), in arrival order
   struct Spot { int x10, y10, npx, peak; };
+  // PICO: each camera's previous short frame (headset time, its spots), under net_. A lamp shows in nearly every short
+  // frame, a base station's laser in one now and then: a spot where the frame before had one is a steady light
+  std::map<int, std::pair<double, std::vector<Spot>>> prev_short_;
   struct Shot { double pc, t, hg, grid_pc; int cam; bool have_lag; std::vector<Spot> bl; };
   std::deque<Shot> waiting_;
   void Use(const Shot &f);  // under net_
+  // sightings while the head turns faster are skipped: a PICO's global shutter frames carry their exposure times, so
+  // its timing error alone limits them, and its laser sightings are few
+  double Wmax() const { return optics_.headset() == Optics::kPico ? kWmaxPico : kWmax; }
   double still_since_ = -1;
   bool frozen_said_ = false;
   double rate_t_ = 0, cam_fps_ = 0, spot_rate_ = 0, sight_rate_ = 0;
