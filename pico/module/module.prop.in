@@ -1,0 +1,6 @@
+id=questlhsync_pico
+name=QuestLHSync for PICO 4 Pro
+version=@VERSION@
+versionCode=@CODE@
+author=CreoleVR (PICO 4 Pro port: community fork)
+description=Experimental PICO 4 Pro port of QuestLHSync: serves the tracking cameras' view of the 2.0 base stations' laser flashes on the local network (TCP 47280, discovery UDP 47281) to the QuestLHSync SteamVR driver. The cameras are read inside pvrtrackingservice with Frida only while a PC is connected; nothing on disk is patched.

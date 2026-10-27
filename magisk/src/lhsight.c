@@ -19,7 +19,7 @@ extern int snprintf(char *, unsigned long, const char *, ...);
 #define EARLY_US 3000                          // wake this long before the predicted frame
 #define HIST 32                                // frame times kept per camera
 struct st {
-  u8 *slot[MAXS]; int sw[MAXS], sh[MAXS], cam[MAXS], pend[MAXS]; u32 shash[MAXS]; int nslots;
+  u8 *slot[MAXS]; int sw[MAXS], sh[MAXS], cam[MAXS], pend[MAXS], wide[MAXS]; u32 shash[MAXS]; int nslots;
   u32 k[MAXC]; int m1[MAXC], m2[MAXC];         // per camera: frame counter, previous two means
   int nostrict[MAXC], nalt[MAXC];              // frames since the last strict short one, alternating ones since
   int thr;                                     // the dim pass's floor
@@ -50,21 +50,25 @@ void set_bufs(u8 *scratch, u16 *cells, int *lab, char *out, int thr) {
 }
 void reset_slots(void) { S.nslots = 0; }
 void add_slot(u8 *p, int w, int h, int cam) {
-  int i = S.nslots++; S.slot[i] = p; S.sw[i] = w; S.sh[i] = h; S.cam[i] = cam; S.pend[i] = 0;
+  int i = S.nslots++; S.slot[i] = p; S.sw[i] = w; S.sh[i] = h; S.cam[i] = cam; S.pend[i] = 0; S.wide[i] = 0;
 }
+// a camera whose pixels are 16-bit words holding 10 bits (the PICO 4 Pro's OV9282s): read as their top 8 bits, and its
+// short frames told from the frame before alone (the PICO alternates long and short frames)
+void add_slot16(u8 *p, int w, int h, int cam) { add_slot(p, w, h, cam); S.wide[S.nslots - 1] = 1; }
+static inline int px(int i, u32 o) { return S.wide[i] ? ((const u16 *)S.slot[i])[o] >> 2 : S.slot[i][o]; }
 u32 n_drop(void) { return S.ndrop; }
 u64 scan_ns(void) { return S.scan_ns; }
 u32 n_scan(void) { return S.nscan; }
 u32 n_poll(void) { return S.npoll; }
 static u32 hash(int i) {
-  const u8 *p = S.slot[i]; u32 n = (u32)(S.sw[i] * S.sh[i]), step = n / 61, h = 2166136261u;
-  for (u32 o = step / 2; o < n; o += step) { h ^= p[o]; h *= 16777619u; }
+  u32 n = (u32)(S.sw[i] * S.sh[i]), step = n / 61, h = 2166136261u;
+  for (u32 o = step / 2; o < n; o += step) { h ^= (u32)px(i, o); h *= 16777619u; }
   return h;
 }
 void prime(void) { for (int i = 0; i < S.nslots; i++) S.shash[i] = hash(i); }
-static int smean(const u8 *p, u32 n) {
+static int smean(int i, u32 n) {
   u32 step = n / 4096, s = 0, c = 0;
-  for (u32 o = step / 2; o < n; o += step) { s += p[o]; c++; }
+  for (u32 o = step / 2; o < n; o += step) { s += (u32)px(i, o); c++; }
   return (int)(s * 10 / c);                  // mean * 10
 }
 static void put(const char *s, int len) {
@@ -199,7 +203,7 @@ static void frame(int i, u64 t) {
   predict(c, t);
   S.last_t[c] = t;
   u32 n = (u32)(w * h);
-  int mean = smean(S.slot[i], n);
+  int mean = smean(i, n);
   u32 k = S.k[c]++;
   int a = S.m1[c], b = S.m2[c];
   S.m2[c] = a; S.m1[c] = mean;
@@ -246,6 +250,7 @@ static void frame(int i, u64 t) {
   // the odd place, else a held place, before the cycle test: found late, it names the wrong frame now and then
   int place = oddp >= 0 ? p == oddp : S.phn[c] >= PH_LOCK ? p == S.ph[c] : -1;
   int is_short = strict || (place >= 0 ? place : cyc >= 0 ? cyc : alt && S.nostrict[c] >= 60 && S.nalt[c] * 4 >= S.nostrict[c]);
+  if (S.wide[i]) is_short = alt || (k >= 1 && mean < 100);  // long, short, long...: darker than the one before
   char line[2400]; int L;
   if (!is_short) {
     L = snprintf(line, sizeof line, "F %d %u %llu %d -1\n", c, k, t / 1000, mean);
@@ -253,7 +258,10 @@ static void frame(int i, u64 t) {
     return;
   }
   u64 t0 = now();
-  memcpy(S.scratch, S.slot[i], n);
+  if (S.wide[i]) {
+    const u16 *w16 = (const u16 *)S.slot[i];
+    for (u32 j = 0; j < n; j++) S.scratch[j] = (u8)(w16[j] >> 2);
+  } else memcpy(S.scratch, S.slot[i], n);
   // saturated blobs (base station dots, lamps), then dimmer ones (>= 4x the frame's mean, at least S.thr) in the cells
   // the saturated ones leave alone: a dot that doesn't saturate, in a room light enough to shorten the exposure
   u64 sx[MAXB], sy[MAXB]; u32 np[MAXB]; int pk[MAXB];
