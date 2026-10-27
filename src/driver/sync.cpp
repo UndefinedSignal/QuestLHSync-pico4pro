@@ -868,6 +868,7 @@ void Solver::Reset(const X4 &x) {
 void Solver::Clear() {
   std::lock_guard<std::mutex> g(m_);
   rt_.clear(); rg_.clear(); ro_.clear(); rd_.clear(); rc_.clear(); rb_.clear();
+  lt_.clear(); lo_.clear(); ld_.clear();
   frames_.clear();
   has_x_ = has_anchor_ = has_acq_x_ = false;
   x_ = anchor_ = acq_x_ = X4{};
@@ -886,6 +887,11 @@ void Solver::Clear() {
 void Solver::Add(double t, V3 o, V3 d, double gt, int cam, bool bright) {
   std::lock_guard<std::mutex> g(m_);
   rt_.push_back(t); ro_.push_back(o); rd_.push_back(d); rg_.push_back(gt); rc_.push_back(cam); rb_.push_back(bright);
+}
+
+void Solver::AddSteady(double t, V3 o, V3 d) {
+  std::lock_guard<std::mutex> g(m_);
+  lt_.push_back(t); lo_.push_back(o); ld_.push_back(d);
 }
 
 void Solver::Replace(double from, const std::vector<double> &T, const std::vector<V3> &O, const std::vector<V3> &D,
@@ -946,6 +952,32 @@ Solver::Rays Solver::GetRays(double t0) {
   r.C.assign(rc_.begin() + j, rc_.end());
   r.B.assign(rb_.begin() + j, rb_.end());
   return r;
+}
+
+Solver::Rays Solver::GetSteady(double t0) {
+  std::lock_guard<std::mutex> g(m_);
+  if (!lt_.empty() && lt_.front() < lt_.back() - kKeep) {
+    size_t j = std::lower_bound(lt_.begin(), lt_.end(), lt_.back() - kKeep) - lt_.begin();
+    lt_.erase(lt_.begin(), lt_.begin() + j);
+    lo_.erase(lo_.begin(), lo_.begin() + j);
+    ld_.erase(ld_.begin(), ld_.begin() + j);
+  }
+  Rays r;
+  size_t j = std::lower_bound(lt_.begin(), lt_.end(), t0) - lt_.begin();
+  r.T.assign(lt_.begin() + j, lt_.end());
+  r.O.assign(lo_.begin() + j, lo_.end());
+  r.D.assign(ld_.begin() + j, ld_.end());
+  return r;
+}
+
+void Solver::LampVeto(const X4 &x, const std::vector<V3> &S, const std::vector<V3> &Z, const Rays &rays,
+                      const Rays &lamps, double gate, std::vector<int> &cnt) const {
+  if (!lamps.size() || cnt.size() != S.size()) return;
+  std::vector<int> lc, rc;  // unthinned, both: a lamp's sightings pile up in few cells, as its leaks do
+  Support(x, S, Z, lamps, gate, lc);
+  Support(x, S, Z, rays, gate, rc);
+  for (size_t k = 0; k < cnt.size(); k++)
+    if (lc[k] >= kLampVetoMin && lc[k] >= kLampVetoRatio * rc[k]) cnt[k] = 0;
 }
 
 void Solver::Stations(std::vector<std::string> &keys, std::vector<V3> &S, std::vector<V3> &Z) const {
@@ -1456,6 +1488,7 @@ bool Solver::Acquire(double now, X4 &best, int &bs, int &tight) {
   acq_dim_ = r.size() == all.size() && std::count(all.B.begin(), all.B.end(), 0) > 0;
   if (S.size() < 2 || r.size() < 30) return false;
   Rays t = Thin(r);
+  Rays lamps = GetSteady(std::max(now - acq_win_, since_));
   std::vector<X4> H;
   Hypotheses(t, S, H);
   std::vector<X4> cand;
@@ -1482,6 +1515,11 @@ bool Solver::Acquire(double now, X4 &best, int &bs, int &tight) {
     std::vector<int> all(t.size()), c2;
     for (size_t i = 0; i < all.size(); i++) all[i] = (int)i;
     BatchSupport(top, S, Z, t, all, 1.5, c2);
+    for (size_t h = 0; h < top.size(); h++) {
+      std::vector<int> c(c2.begin() + h * K, c2.begin() + (h + 1) * K);
+      LampVeto(top[h], S, Z, r, lamps, 1.5, c);
+      std::copy(c.begin(), c.end(), c2.begin() + h * K);
+    }
     std::vector<size_t> o2(top.size());
     for (size_t i = 0; i < o2.size(); i++) o2[i] = i;
     size_t n2 = std::min<size_t>(5, o2.size());
@@ -1499,6 +1537,7 @@ bool Solver::Acquire(double now, X4 &best, int &bs, int &tight) {
     }
     std::vector<int> c;
     Support(x, S, Z, t, INLIER, c);
+    LampVeto(x, S, Z, r, lamps, INLIER, c);
     int sc = Score(c);
     if (sc > bs) { best = x; bs = sc; have = true; }
   }
@@ -1507,6 +1546,7 @@ bool Solver::Acquire(double now, X4 &best, int &bs, int &tight) {
   acq_x_ = best; has_acq_x_ = true;
   std::vector<int> c;
   Support(best, S, Z, t, TIGHT_DEG, c);
+  LampVeto(best, S, Z, r, lamps, TIGHT_DEG, c);
   tight = Score(c);
   return true;
 }
@@ -1524,10 +1564,11 @@ int Solver::ThinnedScore(const X4 &x, double now) {
   std::vector<std::string> keys;
   std::vector<V3> S, Z;
   Stations(keys, S, Z);
-  Rays t = Thin(Bright(GetRays(std::max(now - acq_win_, since_))));
+  Rays b = Bright(GetRays(std::max(now - acq_win_, since_))), t = Thin(b);
   if (!t.size()) return 0;
   std::vector<int> c;
   Support(x, S, Z, t, INLIER, c);
+  LampVeto(x, S, Z, b, GetSteady(std::max(now - acq_win_, since_)), INLIER, c);
   return Score(c);
 }
 
@@ -2197,6 +2238,7 @@ StepStat Solver::Step(double /*now*/) {
       st.cond = f.cond;
       std::vector<int> cnt;
       Support(x_, S, Z, r, INLIER, cnt);
+      LampVeto(x_, S, Z, r, GetSteady(std::max(now - WIN, since_)), INLIER, cnt);
       Predict(x_, S, Z, P, Zq);
       std::vector<double> in;
       for (size_t n = 0; n < r.size(); n++) {
@@ -2814,6 +2856,8 @@ void Sync::HeadsetReset() {
   grid_ = FrameGrid(grid_quest_);
   grid_logged_.clear();
   waiting_.clear();
+  ahead_.clear();
+  prev_short_.clear();
 }
 
 void Sync::SetStreamer(const std::string &system) {
@@ -3098,19 +3142,17 @@ void Sync::OnLine(double pc, const char *line) {
     // px, but a lamp's can grow as big): a lamp is there in the frame before too, a laser hardly ever
     auto &pv = prev_short_[cam];
     bool consecutive = pv.first > 0 && hs > pv.first && hs - pv.first < kSteadyGap;
-    std::vector<Spot> keep;
-    for (const Spot &b : bl) {
-      bool steady = false;
+    std::vector<Spot> was = bl;
+    for (Spot &b : bl) {
       if (consecutive)
         for (const Spot &q : pv.second)
-          if (std::abs(q.x10 - b.x10) < kSteadyR10 && std::abs(q.y10 - b.y10) < kSteadyR10) { steady = true; break; }
-      if (steady) spots_.steady++;
-      else keep.push_back(b);
+          if (std::abs(q.x10 - b.x10) < kSteadyR10 && std::abs(q.y10 - b.y10) < kSteadyR10) { b.steady = true; break; }
+      if (b.steady) spots_.steady++;
     }
     pv.first = hs;
-    pv.second = bl;
-    bl.swap(keep);
-    nb = (int)bl.size();
+    pv.second.swap(was);
+    nb = 0;
+    for (const Spot &b : bl) nb += !b.steady;
   }
   double hg = have_lag ? hs - lag : std::numeric_limits<double>::quiet_NaN();  // frame time, headset clock
   if (have_lag && grid_.period(cam) > 0) solver_.SetFramePeriod(grid_.period(cam));
@@ -3118,7 +3160,7 @@ void Sync::OnLine(double pc, const char *line) {
   if (!clock_.Map(hs - (have_lag ? lag : 0.0), grid_pc)) { spots_.other += nb; return; }
   double expo = expo_;
   double t = grid_pc - expo - (have_lag ? 0.0 : kLagFallback);
-  waiting_.push_back({pc, t, hg, grid_pc, cam, have_lag, std::move(bl)});
+  Queue({pc, t, hg, grid_pc, cam, have_lag, std::move(bl)}, hs);
   // the frames whose head pose is in (one after their pose time), or that waited long enough, oldest first
   while (!waiting_.empty()) {
     V3 lp;
@@ -3130,11 +3172,40 @@ void Sync::OnLine(double pc, const char *line) {
   }
 }
 
+void Sync::Queue(Shot s, double hs) {
+  if (optics_.headset() != Optics::kPico) { waiting_.push_back(std::move(s)); return; }
+  auto &q = ahead_[s.cam];
+  q.push_back({hs, std::move(s)});
+  // the oldest goes on once kSteadyAhead frames follow it, or once the newest is well past it (a camera stopped)
+  while (!q.empty() && ((int)q.size() > kSteadyAhead || hs - q.front().hs > 0.3)) {
+    Ahead &a = q.front();
+    for (Spot &b : a.shot.bl) {
+      if (b.steady) continue;
+      int cx = b.x10, cy = b.y10;
+      double th = a.hs;
+      bool run = true;
+      for (int j = 1; j <= kSteadyAhead && run; j++) {
+        run = j < (int)q.size() && q[j].hs > th && q[j].hs - th < kSteadyGap;
+        if (!run) break;
+        run = false;
+        for (const Spot &n : q[j].shot.bl)
+          if (std::abs(n.x10 - cx) < kSteadyR10 && std::abs(n.y10 - cy) < kSteadyR10) { cx = n.x10; cy = n.y10; run = true; break; }
+        th = q[j].hs;
+      }
+      if (run) { b.steady = true; spots_.steady++; }
+    }
+    waiting_.push_back(std::move(a.shot));
+    q.pop_front();
+  }
+}
+
 void Sync::Use(const Shot &f) {
   const double t = f.t, hg = f.hg, grid_pc = f.grid_pc;
-  const int cam = f.cam, nb = (int)f.bl.size();
+  const int cam = f.cam;
   const bool have_lag = f.have_lag;
   const std::vector<Spot> &bl = f.bl;
+  int nb = 0;  // the spots not counted already: steady lights are (HeadsetLine)
+  for (const Spot &b : bl) nb += !b.steady;
   M3 R; V3 p;
   double w;
   if (!poses_.At(t, R, p) || !poses_.Speed(t, w)) { spots_.other += nb; return; }
@@ -3160,6 +3231,13 @@ void Sync::Use(const Shot &f) {
   if (have_lag && w <= Wmax() && optics_.Pose(cam, Rc, tc)) solver_.AddFrame(t, hg, cam, p + R * tc, R * Rc);
   for (const Spot &b : bl) {
     int x10 = b.x10, y10 = b.y10, npx = b.npx;
+    if (b.steady) {  // not a sighting, but where a lamp is (Solver::LampVeto)
+      V3 o, d;
+      if (npx <= kMaxPx && w <= Wmax() && optics_.Ray(cam, x10 / 10.0 - 0.5, y10 / 10.0 - 0.5, o, d) &&
+          b.peak >= kBright)
+        solver_.AddSteady(t, p + R * o, R * d);
+      continue;
+    }
     if (npx > kMaxPx) { spots_.big++; continue; }
     V3 o, d;
     if (!optics_.Ray(cam, x10 / 10.0 - 0.5, y10 / 10.0 - 0.5, o, d)) { spots_.other++; continue; }

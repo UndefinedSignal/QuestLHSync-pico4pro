@@ -62,6 +62,9 @@ constexpr int kBright = 250;
 constexpr int kLampPx = 20;             // blobs this big are steady lights (the frozen-pose check)
 constexpr double kSteadyGap = 0.06;     // s: PICO short frames 40 ms apart are consecutive ...
 constexpr int kSteadyR10 = 200;         // ... and a spot within 20 px of one in the frame before is a steady light
+constexpr int kSteadyAhead = 2;         // ... or one starting a run of this many more (Sync::ahead_)
+constexpr int kLampVetoMin = 20;        // Solver::LampVeto
+constexpr double kLampVetoRatio = 4.0;
 // a camera frame whose head pose hasn't come in yet waits for it this long: a learned timing can put the pose time
 // after the frame's arrival (the Frame's Steam Link: -6 ms, the newest pose then a few ms short of it)
 constexpr double kPoseWait = 0.1;       // s
@@ -330,6 +333,9 @@ class Solver {
   void Clear();  // forgets the sightings, the alignment and what hung on them; the stations stay (Sync::ForceRecalibrate)
   // g: the frame's time on the headset's clock (NaN until the frame grid is known)
   void Add(double t, V3 o, V3 d, double g, int cam, bool bright);
+  // a steady light's sighting (PICO: a spot there in the frame before too): a fit that puts a base station where many
+  // of these point has lined it up with a lamp (LampVeto)
+  void AddSteady(double t, V3 o, V3 d);
   void Replace(double from, const std::vector<double> &T, const std::vector<V3> &O, const std::vector<V3> &D,
                const std::vector<double> &G, const std::vector<int> &C, const std::vector<char> &B);  // rays >= from
   void SetStation(const std::string &serial, V3 p, const M3 &R);
@@ -418,6 +424,14 @@ class Solver {
   bool KeptHeight(double &h) const;  // the most-held height, once held kHeightKeep s
 
   Rays GetRays(double t0);
+  Rays GetSteady(double t0);
+  std::vector<double> lt_;  // the steady lights' sightings (AddSteady), under m_
+  std::vector<V3> lo_, ld_;
+  // a station that gate catches kLampVetoMin steady sightings for, kLampVetoRatio times its support or more, counts no
+  // support: a lamp, not the station (a PICO recording: a fit onto two lamps had 20x as many steady sightings as
+  // sightings, the true fit's stations at most 1.5x, from a channel 1 station's laser seen in consecutive frames)
+  void LampVeto(const X4 &x, const std::vector<V3> &S, const std::vector<V3> &Z, const Rays &rays, const Rays &lamps,
+                double gate, std::vector<int> &cnt) const;
   void Support(const X4 &x, const std::vector<V3> &S, const std::vector<V3> &Z, const Rays &r, double gate, std::vector<int> &cnt) const;
   static int Score(const std::vector<int> &c);
   static void Cells(const Rays &r, const std::vector<char> &use, std::vector<int> &cnt);
@@ -573,11 +587,17 @@ class Sync {
   std::map<int, std::vector<std::pair<double, double>>> prev_big_;  // under net_: each camera's last steady lights
   long img_moved_ = 0, img_still_ = 0;  // under net_: of those, while SteamVR's headset stands still
   // under net_: short frames waiting for their head pose (kPoseWait), in arrival order
-  struct Spot { int x10, y10, npx, peak; };
+  struct Spot { int x10, y10, npx, peak; bool steady = false; };
   // PICO: each camera's previous short frame (headset time, its spots), under net_. A lamp shows in nearly every short
   // frame, a base station's laser in one now and then: a spot where the frame before had one is a steady light
   std::map<int, std::pair<double, std::vector<Spot>>> prev_short_;
   struct Shot { double pc, t, hg, grid_pc; int cam; bool have_lag; std::vector<Spot> bl; };
+  // ... and a lamp missed in one frame comes back in the next ones: each camera's short frames wait for the
+  // kSteadyAhead after them, and a spot that starts a run of that many is a steady light too (PICO recordings: of a
+  // lamp's sightings let through by the frame before alone, 1 in 10-70 stays; of the lasers, 24 of 25)
+  struct Ahead { double hs; Shot shot; };
+  std::map<int, std::deque<Ahead>> ahead_;
+  void Queue(Shot s, double hs);  // under net_: into waiting_, through ahead_ on a PICO
   std::deque<Shot> waiting_;
   void Use(const Shot &f);  // under net_
   // sightings while the head turns faster are skipped: a PICO's global shutter frames carry their exposure times, so
