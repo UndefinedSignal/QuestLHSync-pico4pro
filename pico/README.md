@@ -17,7 +17,8 @@ untested.
 ## Requirements
 
 - A **PICO 4 Pro rooted with [Magisk](https://github.com/topjohnwu/Magisk)**.
-  Rooting means unlocking the bootloader, for example with more-picohaxx-tool.
+  Rooting means unlocking the bootloader, for example with
+  [more-picohaxx-tool](https://github.com/chaixshot/more-picohaxx-tool).
   It can brick the headset and void its warranty. Back up first.
 - **SteamVR base stations** (tested with 2.0) and at least one lighthouse device
   switched on: a tracker or an Index controller.
