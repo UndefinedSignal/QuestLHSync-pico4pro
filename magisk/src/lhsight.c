@@ -32,6 +32,7 @@ struct st {
   int adj[MAXC], late[MAXC], slept;            // how much earlier to wake for it (us), its frame waited for us
   int cyes[MAXC], cno[MAXC];                   // clearly darker frames the cycle took for short ones, and didn't
   int ph[MAXC], phn[MAXC];                     // the short frame's k % 3, and its net votes (frame())
+  u64 lastseq[MAXS]; int tclk; long long boff; u32 nwideold; // wide slots: last frame number, footer clock (1 mono, 2 boot)
   int em[MAXC][3], nem[MAXC];                  // running mean (* 10) per k % 3, and the frames in it (frame())
 };
 // the place: trusted from PH_LOCK net votes, held to PH_MAX, PH_MISS off per vote elsewhere; lost after a PH_GAP (ns)
@@ -45,6 +46,7 @@ struct st {
 #define EM_WARM 10
 extern struct st S;
 static u64 now(void) { struct ts t; clock_gettime(1, &t); return (u64)t.s * 1000000000ull + (u64)t.ns; }
+static u64 now_boot(void) { struct ts t; clock_gettime(7, &t); return (u64)t.s * 1000000000ull + (u64)t.ns; }
 void set_bufs(u8 *scratch, u16 *cells, int *lab, char *out, int thr) {
   S.scratch = scratch; S.cells = cells; S.lab = lab; S.out = out; S.head = S.tail = 0; S.thr = thr;
 }
@@ -65,7 +67,23 @@ static u32 hash(int i) {
   for (u32 o = step / 2; o < n; o += step) { h ^= (u32)px(i, o); h *= 16777619u; }
   return h;
 }
-void prime(void) { for (int i = 0; i < S.nslots; i++) S.shash[i] = hash(i); }
+// A wide (PICO) slot's frame ends in a footer right after its pixels: the exposure time (ns) and the frame number,
+// both u64, shared by the four cameras. A new frame number is a new frame, written whole: no hash, no settling poll.
+static const u64 *foot(int i) { return (const u64 *)(S.slot[i] + (u32)(S.sw[i] * S.sh[i]) * 2u); }
+void prime(void) {
+  for (int i = 0; i < S.nslots; i++) { S.shash[i] = hash(i); if (S.wide[i]) S.lastseq[i] = foot(i)[1]; }
+}
+// a footer time on this daemon's CLOCK_MONOTONIC: which clock it is (the one it was taken on moments ago) is found once
+static u64 foot_time(u64 ts) {
+  if (!S.tclk) {
+    u64 m = now(), b = now_boot();
+    long long dm = (long long)(m - ts), db = (long long)(b - ts);
+    if (dm >= 0 && dm < 500000000ll) S.tclk = 1;
+    else if (db >= 0 && db < 500000000ll) { S.tclk = 2; S.boff = (long long)(b - m); }
+    else return now();  // neither (yet): the found time
+  }
+  return S.tclk == 2 ? ts - (u64)S.boff : ts;
+}
 static int smean(int i, u32 n) {
   u32 step = n / 4096, s = 0, c = 0;
   for (u32 o = step / 2; o < n; o += step) { s += (u32)px(i, o); c++; }
@@ -281,7 +299,25 @@ int poll(void) {
   int got = 0, first = S.slept;  // the first poll after a sleep until a predicted frame
   S.npoll++;
   S.slept = 0;
+  // wide slots: the new frames in frame-number order (a poll can find a camera's two latest)
+  int nw = 0, wi[MAXS]; u64 ws[MAXS];
   for (int i = 0; i < S.nslots; i++) {
+    if (!S.wide[i]) continue;
+    u64 seq = foot(i)[1];
+    if (seq == S.lastseq[i]) continue;
+    if (seq < S.lastseq[i]) S.nwideold++;  // an older frame number in a slot: the ring was rewound
+    S.lastseq[i] = seq;
+    int b = nw++;
+    for (; b > 0 && ws[b - 1] > seq; b--) { ws[b] = ws[b - 1]; wi[b] = wi[b - 1]; }
+    ws[b] = seq; wi[b] = i;
+  }
+  for (int j = 0; j < nw; j++) {
+    if (first) S.late[S.cam[wi[j]]] = 1;
+    frame(wi[j], foot_time(foot(wi[j])[0]));
+    got++;
+  }
+  for (int i = 0; i < S.nslots; i++) {
+    if (S.wide[i]) continue;
     u32 hh = hash(i);
     if (hh != S.shash[i]) { S.shash[i] = hh; S.pend[i] = 1; if (first) S.late[S.cam[i]] = 1; continue; }
     if (S.pend[i]) { S.pend[i] = 0; frame(i, now()); got++; }
@@ -291,7 +327,7 @@ int poll(void) {
 // how long the next poll can wait (us): 0 while a frame is pending or a camera is due, else until the first one is
 int idle_us(void) {
   u64 t = now(), due = ~0ull;
-  for (int i = 0; i < S.nslots; i++) if (S.pend[i]) return 0;
+  for (int i = 0; i < S.nslots; i++) if (S.pend[i] && !S.wide[i]) return 0;
   for (int c = 0; c < MAXC; c++) {
     if (!S.last_t[c]) continue;
     if (!S.due[c]) return 0;  // no prediction yet: poll every millisecond

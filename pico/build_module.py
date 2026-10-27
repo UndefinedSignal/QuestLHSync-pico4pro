@@ -23,8 +23,8 @@ sys.path.insert(0, os.path.join(ROOT, "magisk"))
 import build_module as quest  # noqa: E402  (frida_inject(), lf())
 
 with open(os.path.join(ROOT, "src", "common", "qlhs_status.h"), encoding="utf-8") as _h:
-    VERSION = "v" + re.search(r'#define QLHS_RELEASE "([^"]+)"', _h.read()).group(1) + "-pico"
-CODE = 1
+    VERSION = "v" + re.search(r'#define QLHS_RELEASE "([^"]+)"', _h.read()).group(1) + "-pico2"
+CODE = 2
 
 
 def compile_daemon(out):
