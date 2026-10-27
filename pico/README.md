@@ -75,13 +75,19 @@ Also turn off OpenVR-SpaceSync and anything else that moves lighthouse devices.
 1. Start SteamVR with the PICO streaming. On the QuestLHSync dashboard page you
    should see the headset (`A8110 at <ip>: connected` in the log) and its
    cameras.
-2. Wear your trackers. They tell the right alignment from its mirror image.
+2. Wear your trackers or hold your controllers. They tell the right alignment
+   from its mirror image, and from one turned about a base station when you
+   have only seen two of them yet.
 3. Stand in your play space and **slowly look at each base station in turn**,
    for 20-30 s each. Take a step now and then. The log says
    `acquired: yaw ... support ...` when it has the alignment.
 4. It saves the alignment per headset
    (`%LOCALAPPDATA%\QuestLHSync\headsets\A8110-...\state.json`). The next start
-   picks it up in seconds (`seeded from saved stations`).
+   picks it up in seconds (`seeded from saved stations`) and keeps it once this
+   session's sightings bear it out (`the saved alignment holds`). If the headset
+   space turned since (a headset reboot or a redrawn boundary), the saved
+   alignment is replaced as soon as a new one is found, as fast as from scratch
+   (`acquired: ... in place of the saved alignment`).
 
 Why slowly: the PICO's cameras catch a base station's laser only a few times a
 minute per station, many times fewer than a Quest's. So the PICO acquires from
@@ -111,6 +117,13 @@ or turns faster than 100 deg/s, are skipped.
   that puts a base station where they point counts no support for that
   station. With lamps on, acquiring takes longer (about 3 minutes in the test
   room). Switching bright spot lights off speeds it up.
+- **Worn devices weigh more.** With few sightings, a fit turned about the base
+  station you see most can put a second station's laser at a third one's place
+  and look as well supported as the true fit. The worn or held devices tell
+  them apart: a first fit that puts them more than 1 m from your head needs
+  twice the support, and a fit that keeps them near your head takes over from
+  one that puts them a metre further off, even with less support. A recording
+  with lamps on went from 11 minutes on such a fit to 21 seconds.
 - **Camera map.** `cammap.txt` in the module folder maps the four buffer rings
   to camera ids (default `3,2,1,0`, found by covering the cameras one at a
   time). An update keeps a map you changed.

@@ -70,6 +70,12 @@ constexpr int kSteadyR10 = 200;         // ... and a spot within 20 px of one in
 constexpr int kSteadyAhead = 2;         // ... or one starting a run of this many more (Sync::ahead_)
 constexpr int kLampVetoMin = 20;        // Solver::LampVeto
 constexpr double kLampVetoRatio = 4.0;
+// PICO (Solver::SetCautious): an acquisition with no fit of this session to weigh it against (none yet, or one only
+// seeded from the last session that no sighting of this one has borne out) that puts the worn or held lighthouse
+// devices more than kBodyNear from the head takes kAstrayMul times the support. A recording: two stations seen, the
+// third out of view, and the fit turned 86 deg about the anchor put the far station's laser at the unseen one's place
+// (support 10, 6 tight) with the hands 2.3 m from the head, and held for 11 minutes
+constexpr int kAstrayMul = 2;
 // a camera frame whose head pose hasn't come in yet waits for it this long: a learned timing can put the pose time
 // after the frame's arrival (the Frame's Steam Link: -6 ms, the newest pose then a few ms short of it)
 constexpr double kPoseWait = 0.1;       // s
@@ -335,6 +341,10 @@ class Solver {
   using MotionFn = std::function<double(const X4 &, double &)>;
   void SetMotion(MotionFn f) { motion_ = std::move(f); }
   void Reset(const X4 &x);
+  // the alignment saved by the last session: the current fit, but on trial (trial_) until this session's sightings
+  // lock it (PICO, SetCautious: a headset space turned since by a reboot or a redrawn boundary leaves it wrong, and a
+  // candidate far from it then needed twice the support, which a PICO's few sightings didn't reach in 3 minutes)
+  void Seed(const X4 &x);
   void Clear();  // forgets the sightings, the alignment and what hung on them; the stations stay (Sync::ForceRecalibrate)
   // g: the frame's time on the headset's clock (NaN until the frame grid is known)
   void Add(double t, V3 o, V3 d, double g, int cam, bool bright);
@@ -353,6 +363,7 @@ class Solver {
   bool has_x() const { return has_x_; }
   void SetDimDots(bool on) { dim_dots_ = on; }  // see dim_dots_
   void SetAcqWin(double s) { acq_win_ = s; }  // s of sightings an acquisition looks at (ACQ_WIN, longer on a PICO)
+  void SetCautious(bool on) { cautious_ = on; }  // PICO: a seed on trial (Seed) and kAstrayMul
   bool starved() const { return starved_; }
   int resets() const { return resets_; }
   X4 x() const { return x_; }
@@ -421,6 +432,9 @@ class Solver {
   // (Starved)
   std::atomic<bool> dim_dots_{false};
   std::atomic<double> acq_win_{ACQ_WIN};
+  std::atomic<bool> cautious_{false};
+  bool trial_ = false;            // x_ is the last session's alignment, not yet locked by this one's sightings
+  double astray_said_ = -1e18;    // the last log of an acquisition kAstrayMul held back
   double DimGate() const { return starved_ ? INLIER : -1; }
   int amb_state_ = 0;        // the mirror check's last outcome, logged when it changes
   double kept_said_ = -1e18;  // the last log of a far acquisition the worn devices turned down

@@ -865,6 +865,12 @@ void Solver::Reset(const X4 &x) {
   anchor_ = x; has_anchor_ = true;
   id_said_.clear();
   last_id_ = -1e18;  // a new alignment: its stations' rotors are checked at the next step
+  trial_ = false;
+}
+
+void Solver::Seed(const X4 &x) {
+  Reset(x);
+  trial_ = cautious_;
 }
 
 void Solver::Clear() {
@@ -872,8 +878,9 @@ void Solver::Clear() {
   rt_.clear(); rg_.clear(); ro_.clear(); rd_.clear(); rc_.clear(); rb_.clear();
   lt_.clear(); lo_.clear(); ld_.clear();
   frames_.clear();
-  has_x_ = has_anchor_ = has_acq_x_ = false;
+  has_x_ = has_anchor_ = has_acq_x_ = trial_ = false;
   x_ = anchor_ = acq_x_ = X4{};
+  astray_said_ = -1e18;
   since_ = brk_ = last_acq_ = seen_ = last_id_ = last_layout_ = -1e18;
   id_said_.clear();
   stat_ = StepStat();
@@ -2267,10 +2274,16 @@ StepStat Solver::Step(double /*now*/) {
     CheckLayout(keys, S, Z);
   }
   bool locked = false;
+  int held = 0;
   if (has_x_ && st.has_per) {
     std::vector<int> c;
     for (auto &kv : st.per) c.push_back(kv.second);
-    locked = Score(c) >= 10;
+    held = Score(c);
+    locked = held >= 10;
+  }
+  if (trial_ && locked) {
+    trial_ = false;
+    log_(Fmt("the saved alignment holds: this session's sightings bear it out (support %d)", held));
   }
   if (has_x_ && locked && st.cond) {  // the height the fit holds, by time
     double dt = std::min(now - held_t_, 2.0);
@@ -2291,10 +2304,21 @@ StepStat Solver::Step(double /*now*/) {
       int k = acq_dim_ ? 2 : 1;  // dim rays: other lights line up with a wrong alignment more easily
       double dn, dc;
       std::string how;
-      bool far = has_x_ && !acq_forced_ && Apart(xa, x_, S) > 1.0;
+      // a seed on trial is no fit of this session's: a candidate far from it is weighed as if there were none
+      bool far = has_x_ && !trial_ && !acq_forced_ && Apart(xa, x_, S) > 1.0;
       int fav = far ? BodyFavours(xa, x_, dn, dc, how) : 0;
-      int need = far && !fav ? 2 * ACQ : ACQ;
-      bool enough = sa >= k * need || tight >= k * TIGHT_N || (acq_forced_ && sa >= k * ACQ / 2);
+      int need = far && !fav ? 2 * ACQ : ACQ, need_t = TIGHT_N;
+      // nothing of this session's to weigh it against: the worn or held devices far from the head say it's wrong
+      double da = cautious_ && !far && (!has_x_ || trial_) && body_ ? body_(xa) : NAN;
+      bool astray = std::isfinite(da) && da > kBodyNear;
+      if (astray) { need *= kAstrayMul; need_t *= kAstrayMul; }
+      bool enough = sa >= k * need || tight >= k * need_t || (acq_forced_ && sa >= k * ACQ / 2);
+      if (astray && !enough && (sa >= k * ACQ || tight >= k * TIGHT_N) && now - astray_said_ > 60) {
+        astray_said_ = now;
+        log_(Fmt("acquisition: yaw %+.1f deg (support %d, %d within %.1f deg) would do, but it puts the lighthouse "
+                 "devices worn or held %.1f m from the head: it takes %d", xa[0] * kDeg, sa, tight, TIGHT_DEG, da,
+                 k * need));
+      }
       // The height decides first: a candidate off the kept height doesn't take over without the worn devices for it
       // (lamps line up with a wrong alignment at any height; a head that sat still leaves the held fit's thinned
       // support a handful), and if a wrong fit got in, one at the kept height takes it back on plain support
@@ -2302,8 +2326,12 @@ StepStat Solver::Step(double /*now*/) {
       bool kept = KeptHeight(hk);
       bool off_a = kept && std::fabs(xa[2] - hk) > kHeightTol, off_c = kept && has_x_ && std::fabs(x_[2] - hk) > kHeightTol;
       bool back = off_c && !off_a;
+      // PICO: the worn or held devices near the head with the candidate, and a metre further off with the current fit,
+      // outweigh the current fit's lead in support (the recording's 86 deg fit and its mirror kept a lead over the true
+      // one for 11 minutes, with the hands 1.3-2.3 m from the head against 0.1 m)
+      bool body_wins = cautious_ && fav == 1 && 2 * sa >= cur;
       bool wins = back ? (sa >= k * ACQ || tight >= k * TIGHT_N) && sa > 2 * cur + 5
-                       : enough && (sa > 2 * cur + 5 || acq_forced_);
+                       : enough && (sa > 2 * cur + 5 || acq_forced_ || body_wins);
       if (!wins) {
       } else if (off_a && fav != 1) {
         if (now - kept_said_ > 60) {
@@ -2318,9 +2346,12 @@ StepStat Solver::Step(double /*now*/) {
                    xa[0] * kDeg, sa, cur, how.c_str()));
         }
       } else {
-        log_(Fmt("acquired: yaw %+.2f deg t [%.3f %.3f %.3f] support %d (%d within %.1f deg, was %d)%s%s", xa[0] * kDeg,
+        bool by_body = body_wins && !back && !acq_forced_ && !(sa > 2 * cur + 5);
+        log_(Fmt("acquired: yaw %+.2f deg t [%.3f %.3f %.3f] support %d (%d within %.1f deg, was %d)%s%s%s%s", xa[0] * kDeg,
                  xa[1], xa[2], xa[3], sa, tight, TIGHT_DEG, cur, acq_forced_ ? ", by the mirror check" : "",
-                 back ? ", back at the height the fit has held" : ""));
+                 back ? ", back at the height the fit has held" : "",
+                 trial_ ? Fmt(", in place of the saved alignment (yaw %+.2f deg)", x_[0] * kDeg).c_str() : "",
+                 by_body ? (", " + how).c_str() : ""));
         Reset(xa);
         since_ = brk_;
       }
@@ -2846,6 +2877,7 @@ bool Sync::SetCalibration(const std::string &json, std::string *err) {
   // the PICO's short frames catch a laser a few times a minute per station (a Quest's many times that): acquisition
   // looks further back
   solver_.SetAcqWin(optics_.headset() == Optics::kPico ? kPicoAcqWin : Solver::ACQ_WIN);
+  solver_.SetCautious(optics_.headset() == Optics::kPico);
   if (optics_.headset() == Optics::kPico && !timing_learned_ && !cfg_.arrival_clock) expo_ = kExpoPico;
   grid_ = FrameGrid(grid_quest_);
   grid_logged_.clear();
@@ -3640,7 +3672,7 @@ Transform Sync::Tick(double now) {
       X4 x;
       double miss;
       if (Seed(cs, x, miss) && miss < 0.05) {
-        solver_.Reset(x);
+        solver_.Seed(x);
         log_(Fmt("seeded from saved stations: yaw %+.3f t [%.4f, %.4f, %.4f] miss %.1f cm", x[0] * kDeg, x[1], x[2], x[3], miss * 100));
       } else {
         log_("saved stations don't fit: acquiring");
