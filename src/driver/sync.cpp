@@ -110,7 +110,10 @@ bool Optics::Load(const std::string &json, std::string *err) {
   // instead of silently interpreting [fx,fy,cx,cy] as Meta's [f,cx,cy].
   bool gxr_sensor = kind && kind->t == JVal::Str && kind->s == "galaxy_xr_sensor";
   bool gxr = gxr_sensor || (kind && kind->t == JVal::Str && kind->s == "galaxy_xr");
-  const JVal *cams = root.get(gxr ? "GxrCameraCalibration" : "CameraCalibration");
+  // The PICO 4 Pro's lhsyncd fits its cameras' omnidirectional model to Fisheye62 and sends them in Meta's layout, but
+  // in its IMU's frame, under their own key so an older driver doesn't take that for the head's
+  bool pico = kind && kind->t == JVal::Str && kind->s == "pico";
+  const JVal *cams = root.get(gxr ? "GxrCameraCalibration" : pico ? "PicoCameraCalibration" : "CameraCalibration");
   if (!cams || cams->t != JVal::Arr) { if (err) *err = "no CameraCalibration"; return false; }
   CamCal out[kMaxCam];
   int n = 0;
@@ -151,11 +154,28 @@ bool Optics::Load(const std::string &json, std::string *err) {
     n++;
   }
   if (!n) { if (err) *err = "no tracking camera calibration"; return false; }
+  if (pico) {
+    // head <- IMU: x right = -y, y up = x, z back = z, about the head's origin in the IMU frame
+    M3 Rhi;
+    for (int r = 0; r < 3; r++) for (int q = 0; q < 3; q++) Rhi.m[r][q] = 0;
+    Rhi.m[0][1] = -1; Rhi.m[1][0] = 1; Rhi.m[2][2] = 1;
+    V3 o{kPicoHeadInImu[0], kPicoHeadInImu[1], kPicoHeadInImu[2]};
+    int up = 0;
+    for (int i = 0; i < kMaxCam; i++) {
+      if (!out[i].valid) continue;
+      out[i].R = Rhi * out[i].R;
+      out[i].t = Rhi * (out[i].t - o);
+      up += out[i].R.m[1][2] > kUpward;
+    }
+    // as on the Frame: the lower pair looks down at the floor and the hands, the base stations hang above
+    if (up)
+      for (int i = 0; i < kMaxCam; i++) out[i].use = out[i].valid && out[i].R.m[1][2] > kUpward;
+  }
   for (int i = 0; i < kMaxCam; i++) cams_[i] = out[i];
   const JVal *dev = root.get("Device"), *type = dev ? dev->get("DeviceType") : nullptr;
   device_ = type && type->t == JVal::Str ? type->s : "";
-  headset_ = gxr ? kGalaxyXR : kQuest;
-  exact_time_ = gxr_sensor;  // Backend converted QVR sensor BOOTTIME to daemon MONOTONIC.
+  headset_ = gxr ? kGalaxyXR : pico ? kPico : kQuest;
+  exact_time_ = gxr_sensor || pico;  // Backend converted QVR sensor BOOTTIME to daemon MONOTONIC; PICO: frame footers
   return true;
 }
 

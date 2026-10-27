@@ -279,7 +279,8 @@ static size_t jnum(char *o, size_t cap, const double *v, int n) {
   return k;
 }
 
-// {"Device": {...}, "CameraCalibration": [Meta-style cameras: the fitted Fisheye62, DeviceFromCamera = T_BS],
+// {"kind": "pico", "Device": {...}, "PicoCameraCalibration": [Meta-style cameras: the fitted Fisheye62,
+//  DeviceFromCamera = T_BS],
 //  "PicoKalibr": [the factory omni/radtan numbers as they are]}. DeviceFromCamera is in the IMU (body) frame.
 int hs_calibration(char **data, size_t *len, char *name, size_t n) {
   struct kcam c[NCAM];
@@ -289,8 +290,8 @@ int hs_calibration(char **data, size_t *len, char *name, size_t n) {
   char *j = malloc(cap);
   char model[96], fw[96], serial[96];
   hs_device_info(serial, model, fw, sizeof model);
-  o += (size_t)snprintf(j + o, cap - o, "{\"Device\": {\"DeviceType\": \"PICO 4 Pro\", \"Model\": \"%s\"},\n \"Frame\": \"imu\",\n"
-                        " \"CameraCalibration\": [", model);
+  o += (size_t)snprintf(j + o, cap - o, "{\"kind\": \"pico\", \"Device\": {\"DeviceType\": \"PICO 4 Pro\", \"Model\": \"%s\"},\n"
+                        " \"Frame\": \"imu\",\n \"PicoCameraCalibration\": [", model);
   for (int i = 0; i < NCAM; i++) {
     double P[NP], rms = fit_f62(&c[i], P);
     logf_("cam%d: omni xi %.3f f %.1f -> Fisheye62 f %.2f, fit RMS %.3f px", i, c[i].xi, c[i].fu, P[0], rms);

@@ -119,6 +119,11 @@ constexpr double kHeightBin = 0.05, kHeightTol = 0.2, kHeightKeep = 120.0;  // m
 constexpr double kBrkJumpGap = 0.2;  // s
 
 double RotorPeriod(int channel);  // s, a 2.0 base station on channel 1..16, else 0
+// The PICO 4 Pro's calibration is in its IMU's frame (x up, y left, z back). SteamVR's head pose: x right, y up, z back,
+// its origin taken here between the eyes: across the headset's middle (the camera pairs are symmetric about y = 5 cm),
+// about 2 cm under the upper cameras' level and 4 cm behind them. (An estimate: the 4-DOF fit can't take up an offset
+// that turns with the head, so a wrong one shows as a few cm of error.)
+constexpr double kPicoHeadInImu[3] = {-0.02, 0.05, 0.04};
 constexpr double kUpward = 0.1;        // a camera whose axis climbs this much (of 1) looks up: the Frame's upper pair
 
 // ---------------------------------------------------------------- optics
@@ -145,7 +150,7 @@ class Optics {
   bool Used(int cam) const { return cam >= 0 && cam < kMaxCam && cams_[cam].valid && cams_[cam].use; }  // sightings count
   std::string Unused() const;  // "0, 1": the calibrated cameras left out, "" for none
   const std::string &device() const { return device_; }       // "Seacliff" (Quest Pro), "Eureka" (Quest 3), ...
-  enum Headset { kQuest, kFrame, kGalaxyXR };
+  enum Headset { kQuest, kFrame, kGalaxyXR, kPico };
   Headset headset() const { return headset_; }     // whose calibration it is
   bool exact_time() const { return exact_time_; }  // frame times are the frames' own, no poll lag to take off
 

@@ -70,6 +70,6 @@ class HeadsetLink {
 
 double QpcNow();  // seconds, QueryPerformanceCounter
 
-// "Quest Pro", "Quest 3" (the 3S too) or "Steam Frame" from a model name, device codename or serial, whatever spells
+// "Quest Pro", "Quest 3" (the 3S too), "Steam Frame" or "PICO 4 Pro" from a model name, device codename or serial, whatever spells
 // it ("Meta Quest Pro", "Oculus Quest 3", "CREOLECAST-QUEST3S", "eureka", "Deckard MP", ...); "" for anything else
 std::string QuestFamily(const std::string &text);
