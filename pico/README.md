@@ -100,10 +100,12 @@ or turns faster than 100 deg/s, are skipped.
   `radtan`, camera-to-IMU extrinsics) is fitted to the driver's Fisheye62 model,
   at 0.03-0.07 px RMS.
 - **Steady lights.** The PICO's short frames saturate small LED lamps just like
-  the lasers. A spot that was there in the camera's previous short frame is
-  taken for a lamp and dropped, because a laser hardly ever shows twice in a
-  row. If acquisition still stalls, switch bright spot lights off until it
-  acquires.
+  the lasers. A spot is taken for a lamp if it was there in the camera's
+  previous short frame, or if it starts a run of three, because a laser hardly
+  ever shows twice in a row. The lamps' sightings are kept as evidence: a fit
+  that puts a base station where they point counts no support for that
+  station. With lamps on, acquiring takes longer (about 3 minutes in the test
+  room). Switching bright spot lights off speeds it up.
 - **Camera map.** `cammap.txt` in the module folder maps the four buffer rings
   to camera ids (default `3,2,1,0`, found by covering the cameras one at a
   time). An update keeps a map you changed.
