@@ -164,6 +164,8 @@ bool Optics::Load(const std::string &json, std::string *err) {
       if (!out[i].valid) continue;
       out[i].R = Rhi * out[i].R;
       out[i].t = Rhi * (out[i].t - o);
+      out[i].ir = kIRPico;
+      out[i].cy -= kPicoRowShift;  // lhsight's row 0 is the calibration's row 1
     }
     // all four are used: the lower pair (40 deg down) still catches base stations a little above the head near its
     // image's top edge, and the PICO's laser sightings are few (a recording: the lower pair had 2/5 of them)

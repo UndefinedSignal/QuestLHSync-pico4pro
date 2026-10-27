@@ -98,7 +98,12 @@ or turns faster than 100 deg/s, are skipped.
   laser dots.
 - **Calibration.** The PICO's own factory calibration (Kalibr `omni` +
   `radtan`, camera-to-IMU extrinsics) is fitted to the driver's Fisheye62 model,
-  at 0.03-0.07 px RMS.
+  at 0.03-0.07 px RMS. Two corrections were fitted on recorded laser sightings.
+  The near-IR laser images 0.58% nearer the image centre than the calibration
+  predicts, like the Quest's side cameras do the other way. And the module's
+  image rows are one above the calibration's. Together they halve the median
+  sighting error, from about 0.5 to 0.25 deg. They were fitted on one headset,
+  so another PICO 4 Pro may differ slightly.
 - **Steady lights.** The PICO's short frames saturate small LED lamps just like
   the lasers. A spot is taken for a lamp if it was there in the camera's
   previous short frame, or if it starts a run of three, because a laser hardly

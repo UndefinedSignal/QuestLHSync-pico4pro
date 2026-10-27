@@ -32,6 +32,11 @@ using X4 = std::array<double, 4>;  // yaw, tx, ty, tz
 constexpr double kIR = 1 / 1.00434;  // side cameras (OV7251): the near-IR laser images 0.434% further out than the
                                      // visible-light calibration predicts (lateral colour); measured on 4 Quest Pro
                                      // sessions, and assumed for the Quest 3's (the same sensor)
+// PICO 4 Pro (OV9282): the laser images 0.58% nearer the centre than the factory calibration predicts, and lhsight's
+// rows are one above the calibration's. Fitted on four sessions' laser sightings (0.49 -> 0.25 deg median; fitted on three,
+// each fourth went from 0.37-0.57 to 0.21-0.42); per-camera shifts did no better
+constexpr double kIRPico = 1 - 0.0058;
+constexpr double kPicoRowShift = 1.0;   // px
 constexpr int kMaxCam = 16;             // camera ids 0..15
 constexpr double kLagFallback = 0.005;  // s, typical poll lag while the frame grid isn't known yet
 constexpr double kExpoArrival = 0.020;  // s, grid -> exposure with the arrival-envelope clock (logs without round trips)
