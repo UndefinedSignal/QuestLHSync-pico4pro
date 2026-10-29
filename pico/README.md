@@ -122,8 +122,14 @@ or turns faster than 100 deg/s, are skipped.
   and look as well supported as the true fit. The worn or held devices tell
   them apart: a first fit that puts them more than 1 m from your head needs
   twice the support, and a fit that keeps them near your head takes over from
-  one that puts them a metre further off, even with less support. A recording
-  with lamps on went from 11 minutes on such a fit to 21 seconds.
+  one that puts them clearly further off (a metre, or 0.4 m and twice as far),
+  even with less support. A recording with lamps on went from 11 minutes on
+  such a fit to 21 seconds.
+- **Channel 1 stations.** A station on channel 1 turns its rotor twice in about
+  the 40 ms between short frames, so its laser shows in runs of frames and is
+  partly taken for a steady light. The lamp check allows for that (8 steady
+  sightings to 1 before a station counts as a lamp); at 4 it dropped such a
+  station from the true fit after long stretches with the head nearly still.
 - **Camera map.** `cammap.txt` in the module folder maps the four buffer rings
   to camera ids (default `3,2,1,0`, found by covering the cameras one at a
   time). An update keeps a map you changed.

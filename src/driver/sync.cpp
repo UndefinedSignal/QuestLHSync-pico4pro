@@ -1612,7 +1612,9 @@ int Solver::BodyFavours(const X4 &a, const X4 &b, double &da, double &db, std::s
     how_motion = Fmt("the lighthouse devices worn or held move with the head one way (%+.2f against %+.2f)",
                      std::max(ma, mb), std::min(ma, mb));
   }
-  if (std::isfinite(da) && std::isfinite(db) && std::min(da, db) < kBodyNear && std::fabs(da - db) > kBodyGap) {
+  const double lo = std::min(da, db), hi = std::max(da, db);
+  const bool apart = hi - lo > kBodyGap || (cautious_ && hi - lo > kBodyGapPico && hi >= 2 * lo);
+  if (std::isfinite(da) && std::isfinite(db) && lo < kBodyNear && apart) {
     by_place = da < db ? 1 : 2;
     how_place = Fmt("the lighthouse devices worn or held stay near the head one way (%s from it, %s the other way)",
                     Meters(std::min(da, db)).c_str(), Meters(std::max(da, db)).c_str());
@@ -2307,7 +2309,9 @@ StepStat Solver::Step(double /*now*/) {
       // a seed on trial is no fit of this session's: a candidate far from it is weighed as if there were none
       bool far = has_x_ && !trial_ && !acq_forced_ && Apart(xa, x_, S) > 1.0;
       int fav = far ? BodyFavours(xa, x_, dn, dc, how) : 0;
-      int need = far && !fav ? 2 * ACQ : ACQ, need_t = TIGHT_N;
+      // PICO: the tight sightings count double too (a wrong fit with real laser sightings on the wrong stations has
+      // as many tight ones as the true fit: 6, and got in on them)
+      int need = far && !fav ? 2 * ACQ : ACQ, need_t = far && !fav && cautious_ ? 2 * TIGHT_N : TIGHT_N;
       // nothing of this session's to weigh it against: the worn or held devices far from the head say it's wrong
       double da = cautious_ && !far && (!has_x_ || trial_) && body_ ? body_(xa) : NAN;
       bool astray = std::isfinite(da) && da > kBodyNear;

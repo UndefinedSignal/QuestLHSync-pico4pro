@@ -69,7 +69,11 @@ constexpr double kSteadyGap = 0.06;     // s: PICO short frames 40 ms apart are 
 constexpr int kSteadyR10 = 200;         // ... and a spot within 20 px of one in the frame before is a steady light
 constexpr int kSteadyAhead = 2;         // ... or one starting a run of this many more (Sync::ahead_)
 constexpr int kLampVetoMin = 20;        // Solver::LampVeto
-constexpr double kLampVetoRatio = 4.0;
+// A channel 1 station's rotor turns twice in about the 40 ms between short frames, so its laser's phase creeps and it
+// shows in runs of frames, taken for a steady light: its steady sightings were up to 1.7x its others in short
+// sessions, up to 6.8x in a 2.5 h one where the head often sat nearly still (at 4 the veto dropped the true fit's
+// station, a wrong fit got in). Fits onto lamps: mostly 8-12x and more
+constexpr double kLampVetoRatio = 8.0;
 // PICO (Solver::SetCautious): an acquisition with no fit of this session to weigh it against (none yet, or one only
 // seeded from the last session that no sighting of this one has borne out) that puts the worn or held lighthouse
 // devices more than kBodyNear from the head takes kAstrayMul times the support. A recording: two stations seen, the
@@ -123,6 +127,10 @@ constexpr double kLayoutEvery = 30.0;
 // the lighthouse devices worn or held tell two alignments apart (Solver::BodyFavours) when one puts them within
 // kBodyNear of the head and the other kBodyGap further
 constexpr double kBodyNear = 1.0, kBodyGap = 1.0;  // m
+// PICO (Solver::SetCautious): kBodyGapPico further will do, when that is also twice as far. True fits held the devices
+// 0.0-0.2 m from the head; a wrong fit with the three stations turned one place round put them 0.7-0.8 m off, and held
+// for 4 minutes in a replay
+constexpr double kBodyGapPico = 0.4;  // m
 // ... or their motion does (Sync::BodyMotion): when the head went kBodyMoved, and they follow it one way by kBodyCorr
 // and the other way not (a fit and its mirror move them opposite ways)
 constexpr double kBodyMoved = 2.0, kBodyCorr = 0.2;  // m, correlation
