@@ -6,3 +6,5 @@ magisk/frida/
 frame/build/
 __pycache__/
 pico/build/
+pico/tools/lhchannel/bin/
+pico/tools/lhchannel/obj/

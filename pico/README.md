@@ -130,9 +130,46 @@ or turns faster than 100 deg/s, are skipped.
   partly taken for a steady light. The lamp check allows for that (8 steady
   sightings to 1 before a station counts as a lamp); at 4 it dropped such a
   station from the true fit after long stretches with the head nearly still.
+  Better still, move it to another channel: see [Base station channels](#base-station-channels).
 - **Camera map.** `cammap.txt` in the module folder maps the four buffer rings
   to camera ids (default `3,2,1,0`, found by covering the cameras one at a
   time). An update keeps a map you changed.
+
+## Base station channels
+
+The PICO's short frames come every 40 ms. A station's laser shifts through
+their exposure by this much per frame, depending on its channel:
+
+| Channel | Shift per frame |
+|---|---|
+| 1 | 42 us |
+| 2 | 125 us |
+| 3 | 290 us |
+| 4-9 | 0.46-0.96 ms |
+| 10-14 | 1.3-2.5 ms |
+
+On channel 1 the shift is about one short exposure, so the laser shows in runs
+of frames and is mostly taken for a steady light. Avoid channel 1 (and 2). Avoid
+15 and 16 as well: their phase nearly comes back every third frame, so their
+sightings bunch up. Channels 3-14 are fine.
+
+SteamVR changes a 2.0 station's channel through a Lighthouse headset's radio.
+Streaming with Virtual Desktop there is none, and SteamVR says "Bluetooth not
+available". `pico/tools/lhchannel` does it over the PC's own Bluetooth LE
+(.NET 8 SDK, Windows 10 2004 or later). Close other base station tools
+(SpaceSync, Lighthouse PM) first:
+
+```
+cd pico\tools\lhchannel
+dotnet run                        # lists the stations in range and their channels
+dotnet run -- lhb-xxxxxxxx 7      # moves that station to channel 7
+dotnet run -- lhb-xxxxxxxx blink  # flashes its LED, to tell which one it is
+```
+
+It won't take a channel another station uses (add `force` to anyway). Restart
+SteamVR afterwards. The driver log shows `base station LHB-...: channel 7`.
+No tool at hand? Pressing the pinhole button on the station's back with a paper
+clip moves it up one channel per press.
 
 ## Troubleshooting
 
