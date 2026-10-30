@@ -131,6 +131,9 @@ constexpr double kBodyNear = 1.0, kBodyGap = 1.0;  // m
 // 0.0-0.2 m from the head; a wrong fit with the three stations turned one place round put them 0.7-0.8 m off, and held
 // for 4 minutes in a replay
 constexpr double kBodyGapPico = 0.4;  // m
+// PICO: a fit with nothing of this session's to weigh it against is astray (kAstrayMul) past this far. A wrong fit
+// held the devices 0.9-1.4 m off and got in at 0.9 m, under kBodyNear; true fits hold them within 0.2 m
+constexpr double kBodyAstrayPico = 0.5;  // m
 // ... or their motion does (Sync::BodyMotion): when the head went kBodyMoved, and they follow it one way by kBodyCorr
 // and the other way not (a fit and its mirror move them opposite ways)
 constexpr double kBodyMoved = 2.0, kBodyCorr = 0.2;  // m, correlation

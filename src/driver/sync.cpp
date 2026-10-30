@@ -1488,6 +1488,8 @@ static int SecondBest(const int *c, size_t K) {  // Solver::Score's: all but the
   return sum - best;
 }
 
+static double Apart(const X4 &a, const X4 &b, const std::vector<V3> &S);
+
 // best hypothesis from scratch on the last ACQ_WIN s: score = thinned support, tight = the same within TIGHT_DEG
 bool Solver::Acquire(double now, X4 &best, int &bs, int &tight) {
   std::vector<std::string> keys;
@@ -1538,6 +1540,7 @@ bool Solver::Acquire(double now, X4 &best, int &bs, int &tight) {
   }
   bs = -1;
   bool have = false;
+  std::vector<std::pair<X4, int>> scored;
   for (X4 x : cand) {
     for (double gate : {1.5, 0.6}) {
       FitR f = Fit(x, S, Z, r, now, gate, nullptr);
@@ -1548,9 +1551,26 @@ bool Solver::Acquire(double now, X4 &best, int &bs, int &tight) {
     Support(x, S, Z, t, INLIER, c);
     LampVeto(x, S, Z, r, lamps, INLIER, c);
     int sc = Score(c);
+    scored.push_back({x, sc});
     if (sc > bs) { best = x; bs = sc; have = true; }
   }
   if (!have) return false;
+  // PICO: the best that puts the worn or held devices astray gives way to one well apart from it that keeps them near
+  // the head on half its support or more (after a Force recalibrate a wrong fit led the true one for 3 minutes, the
+  // hands 1.0-1.5 m from the head against 0.2 m)
+  if (cautious_ && body_) {
+    double db = body_(best);
+    if (std::isfinite(db) && db > kBodyAstrayPico) {
+      int as = -1;
+      X4 alt{};
+      for (auto &e : scored) {
+        if (2 * e.second < bs || e.second <= as || Apart(e.first, best, S) < 1.0) continue;
+        double d = body_(e.first);
+        if (std::isfinite(d) && d <= kBodyAstrayPico) { alt = e.first; as = e.second; }
+      }
+      if (as >= 0) { best = alt; bs = as; }
+    }
+  }
   CheckMirror(best, bs, S, Z, r, t, now);
   acq_x_ = best; has_acq_x_ = true;
   std::vector<int> c;
@@ -2314,7 +2334,7 @@ StepStat Solver::Step(double /*now*/) {
       int need = far && !fav ? 2 * ACQ : ACQ, need_t = far && !fav && cautious_ ? 2 * TIGHT_N : TIGHT_N;
       // nothing of this session's to weigh it against: the worn or held devices far from the head say it's wrong
       double da = cautious_ && !far && (!has_x_ || trial_) && body_ ? body_(xa) : NAN;
-      bool astray = std::isfinite(da) && da > kBodyNear;
+      bool astray = std::isfinite(da) && da > kBodyAstrayPico;
       if (astray) { need *= kAstrayMul; need_t *= kAstrayMul; }
       bool enough = sa >= k * need || tight >= k * need_t || (acq_forced_ && sa >= k * ACQ / 2);
       if (astray && !enough && (sa >= k * ACQ || tight >= k * TIGHT_N) && now - astray_said_ > 60) {

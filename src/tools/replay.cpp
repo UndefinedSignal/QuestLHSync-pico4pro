@@ -109,6 +109,8 @@ int main(int argc, char **argv) {
     } else if (kind == 'Q') {  // QuestLHSync recordings: clock round trips "Q pc_send pc_recv hs"
       double a, b, h;
       if (sscanf(rest, "%lf %lf %lf", &a, &b, &h) == 3) sync.OnPing(a, b, h);
+    } else if (kind == 'I' && !strncmp(rest, "recalibrate", 11)) {  // the dashboard's Force recalibrate, pressed then
+      sync.ForceRecalibrate();
     }
     while (pc >= next_tick) {
       bool step = sync.WillStep(next_tick);

@@ -120,10 +120,11 @@ or turns faster than 100 deg/s, are skipped.
 - **Worn devices weigh more.** With few sightings, a fit turned about the base
   station you see most can put a second station's laser at a third one's place
   and look as well supported as the true fit. The worn or held devices tell
-  them apart: a first fit that puts them more than 1 m from your head needs
-  twice the support, and a fit that keeps them near your head takes over from
-  one that puts them clearly further off (a metre, or 0.4 m and twice as far),
-  even with less support. A recording with lamps on went from 11 minutes on
+  them apart: a first fit that puts them more than 0.5 m from your head needs
+  twice the support, a candidate that keeps them near your head is preferred
+  over a better supported one that doesn't, and a fit that keeps them near your
+  head takes over from one that puts them clearly further off (a metre, or
+  0.4 m and twice as far), even with less support. A recording with lamps on went from 11 minutes on
   such a fit to 21 seconds.
 - **Channel 1 stations.** A station on channel 1 turns its rotor twice in about
   the 40 ms between short frames, so its laser shows in runs of frames and is
