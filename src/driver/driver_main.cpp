@@ -292,7 +292,7 @@ static std::string GetStr(vr::PropertyContainerHandle_t c, vr::ETrackedDevicePro
 static std::string StreamerName(const std::string &driver) {
   static const char *const names[][2] = {{"oculus_virtualdesktop", "Virtual Desktop"}, {"oculus", "Quest Link"},
                                          {"creolecast", "CreoleCast"}, {"vrlink", "Steam Link"},
-                                         {"alvr_server", "ALVR"}};
+                                         {"alvr_server", "ALVR"}, {"pico", "Pico Connect"}};
   for (auto &n : names)
     if (driver == n[0]) return n[1];
   return driver;
@@ -388,8 +388,8 @@ class Provider : public vr::IServerTrackedDeviceProvider {
         continue;
       }
       if (cls == vr::TrackedDeviceClass_HMD && g_hmd.load() < 0) {
-        // a Quest Pro, 3, 3S or a Steam Frame, whoever streams it: Link, Air Link, Virtual Desktop, ALVR, Steam Link,
-        // CreoleCast, ...
+        // a Quest Pro, 3, 3S, a Steam Frame or a PICO 4, whoever streams it: Link, Air Link, Virtual Desktop, ALVR, Steam
+        // Link, CreoleCast, Pico Connect, ...
         std::string family;
         for (const std::string &p : {model, GetStr(c, vr::Prop_RenderModelName_String), serial,
                                      GetStr(c, vr::Prop_ManufacturerName_String)})
@@ -418,13 +418,13 @@ class Provider : public vr::IServerTrackedDeviceProvider {
           hmd_system_ = StreamerName(sys);
           g_sync->SetStreamer(sys);
           Log(Fmt("HMD %u: %s via %s%s", i, hmd_model_.c_str(), hmd_system_.c_str(), !family.empty() || !any_hmd_ ? "" :
-                  " - not named a Quest Pro, 3, 3S or Steam Frame, used because anyHmd is set"));
+                  " - not named a Quest Pro, 3, 3S, Steam Frame or PICO 4, used because anyHmd is set"));
           continue;
         }
         std::lock_guard<std::mutex> g(hmd_m_);
         hmd_model_ = model.empty() ? "headset" : model;
         hmd_system_ = StreamerName(sys);
-        Log(Fmt("HMD %u: %s via %s isn't a Quest Pro, 3, 3S or Steam Frame: idle", i, hmd_model_.c_str(),
+        Log(Fmt("HMD %u: %s via %s isn't a Quest Pro, 3, 3S, Steam Frame or PICO 4: idle", i, hmd_model_.c_str(),
                 hmd_system_.c_str()));
       }
       g_kind[i] = kOther;

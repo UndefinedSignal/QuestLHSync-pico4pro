@@ -23,7 +23,8 @@ untested.
 - **SteamVR base stations** (tested with 2.0) and at least one lighthouse device
   switched on: a tracker or an Index controller.
 - **Windows with SteamVR**, the PICO streamed to it (tested with Virtual
-  Desktop), both on the **same local network**.
+  Desktop; Pico Connect is recognised too, untested here), both on the **same
+  local network**.
 - To build: Python 3 with `pip install ziglang` for the module. Visual Studio
   2022 or newer with C++ for the driver.
 
@@ -181,6 +182,10 @@ clip moves it up one channel per press.
   - Mostly `while it turned fast` or `while the headset was still`: move slower,
     or keep moving.
   - Few bright spots at all: face the stations.
+- **Nothing after the headset slept or was taken off:** the module looks for
+  the tracking cameras' buffers again every 3 s while no frame comes
+  (`I cameras looked for again` in the headset log). If spots still don't
+  come back, restart SteamVR or reboot the headset and report it.
 - **Record a session** (dashboard: **Record session**) and attach
   `%LOCALAPPDATA%\QuestLHSync\recordings\qlhs-*.txt` to an issue.
   `build_replay.bat` builds `qlhs_replay`, which runs a recording through the

@@ -70,7 +70,8 @@ std::string QuestFamily(const std::string &text) {
   if (has("questpro") || has("seacliff")) return "Quest Pro";
   if (has("quest3") || has("eureka") || has("panther")) return "Quest 3";
   if (has("steamframe") || has("deckard")) return "Steam Frame";
-  if (has("pico4pro") || has("a8110")) return "PICO 4 Pro";
+  // the PICO 4 and 4 Pro (A8110, codename phoenix) as one: Pico Connect and lhsyncd may name the same headset either way
+  if (has("pico4") || has("a8110") || has("phoenix")) return "PICO 4";
   return "";
 }
 

@@ -36,10 +36,11 @@ function discover() {
   reset_slots();
   var fp = fopen(Memory.allocUtf8String("/proc/self/maps"), Memory.allocUtf8String("r")), buf = Memory.alloc(512), all = [];
   while (!fgets(buf, 512, fp).isNull()) {
-    var m = /^([0-9a-f]+)-([0-9a-f]+)\s+r\S+\s.*?dmabuf(?::dmabuf(\d+))?/.exec(buf.readCString());
+    // "/dmabuf:dmabuf12" (Quest), "anon_inode:dmabuf12" (PICO 4, 5.13.7), or a bare "dmabuf"
+    var m = /^([0-9a-f]+)-([0-9a-f]+)\s+r\S+\s.*?(?:dmabuf:dmabuf(\d+)|anon_inode:dmabuf(\d+)|dmabuf)/.exec(buf.readCString());
     if (!m) continue;
-    var a = parseInt(m[1], 16), b = parseInt(m[2], 16);
-    all.push({ a: a, size: b - a, id: m[3] === undefined ? -1 : parseInt(m[3], 10) });
+    var a = parseInt(m[1], 16), b = parseInt(m[2], 16), id = m[3] !== undefined ? m[3] : m[4];
+    all.push({ a: a, size: b - a, id: id === undefined ? -1 : parseInt(id, 10), anon: m[4] !== undefined });
   }
   fclose(fp);
   var regs = all.filter(function (r) { return r.size === BUF; });
@@ -50,8 +51,16 @@ function discover() {
                 (Object.keys(hist).map(function (s) { return "0x" + (+s).toString(16) + "x" + hist[s]; }).join(" ") || "none"));
     if (!regs.length) return 0;
   }
-  // the rings are allocated camera by camera: by dmabuf name when there is one, else by address (seen ascending)
-  if (regs.every(function (r) { return r.id >= 0; })) regs.sort(function (x, y) { return x.id - y.id; });
+  // the rings are allocated camera by camera: by dmabuf name when there is one, else by address (seen ascending).
+  // An "anon_inode:dmabufN" name's number goes by address here: CAMMAP was checked against the address order on a
+  // 5.13.3, where such names (if any) weren't read; a line says whether the two orders agree
+  var named = regs.every(function (r) { return r.id >= 0; }), anon = regs.some(function (r) { return r.anon; });
+  if (named && anon) {
+    var byA = regs.slice().sort(function (x, y) { return x.a - y.a; }).map(function (r) { return r.id; }).join(",");
+    var byId = regs.slice().sort(function (x, y) { return x.id - y.id; }).map(function (r) { return r.id; }).join(",");
+    console.log("I dmabuf numbers " + (byA === byId ? "follow" : "don't follow") + " the buffers' addresses: rings by address");
+  }
+  if (named && !anon) regs.sort(function (x, y) { return x.id - y.id; });
   else regs.sort(function (x, y) { return x.a - y.a; });
   var per = Math.max(1, Math.floor(regs.length / NCAM)), n = 0, got = {};
   regs.forEach(function (r, k) {
@@ -76,12 +85,28 @@ function flush() {
   var cut = pending.lastIndexOf("\n");
   if (cut >= 0) { console.log(pending.slice(0, cut)); pending = pending.slice(cut + 1); }
 }
-console.log("I slots " + discover() + " max_ms " + MAX_MS);
-var t0 = Date.now(), lastBeat = 0, faults = 0;
+var slots = discover();
+console.log("I slots " + slots + " max_ms " + MAX_MS);
+var t0 = Date.now(), lastBeat = 0, faults = 0, lastFrame = Date.now(), lastLook = Date.now();
+// pvrtrackingservice can free its camera rings while it doesn't track (asleep, taken off) and map new ones when it
+// does again, with or without a fault on the old ones: with no slots, or no frame for RELOOK_MS, look again that often
+var RELOOK_MS = 3000;
 function step() {
   var budget = Date.now() + 20;
   while (Date.now() < budget) {
-    try { poll(); } catch (e) { faults++; usleep(200000); console.log("W fault " + e.message + " -> " + discover() + " slots"); }
+    try {
+      if (poll() > 0) lastFrame = Date.now();
+    } catch (e) {
+      faults++; usleep(200000); slots = discover(); lastFrame = lastLook = Date.now();
+      console.log("W fault " + e.message + " -> " + slots + " slots");
+    }
+    var now = Date.now();
+    if (now - lastLook > RELOOK_MS && (slots === 0 || now - lastFrame > RELOOK_MS)) {
+      lastLook = now;
+      var was = slots;
+      slots = discover();
+      if (slots !== was) console.log("I cameras looked for again: " + slots + " slots");
+    }
     usleep(Math.max(1000, idle_us()));
   }
   flush();
