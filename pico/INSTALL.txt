@@ -1,0 +1,15 @@
+QuestLHSync for the PICO 4 Pro - SteamVR driver (experimental community port)
+
+1. Unpack this folder somewhere it can stay, e.g. C:\QuestLHSync-pico.
+   SteamVR loads the driver from here: don't move or delete it afterwards.
+2. Close SteamVR. In PowerShell, in this folder:
+     powershell -executionpolicy bypass -file register_driver.ps1
+   (-remove after it unregisters the driver.)
+3. Install the headset module (QuestLHSync-pico-module-*.zip) in Magisk and
+   reboot the headset.
+4. Turn off SpaceCalibrator, OpenVR-SpaceSync's calibration and anything else
+   that moves lighthouse devices. Start SteamVR, wear your trackers or hold
+   your controllers, and look at each base station for a while.
+
+Full guide, troubleshooting and the source:
+https://github.com/UndefinedSignal/QuestLHSync-pico4pro/blob/pico-4-pro/pico/README.md

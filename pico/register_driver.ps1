@@ -1,8 +1,10 @@
-# Registers this checkout's SteamVR driver (driver\questlhsync) with SteamVR, after build.bat. SteamVR closed.
+# Registers the SteamVR driver with SteamVR, SteamVR closed: the questlhsync folder next to this script (a release
+# zip, unpacked), else this checkout's driver\questlhsync (after build.bat).
 #   powershell -executionpolicy bypass -file pico\register_driver.ps1          register
 #   powershell -executionpolicy bypass -file pico\register_driver.ps1 -remove  unregister
 param([switch]$Remove)
-$driver = Join-Path (Split-Path $PSScriptRoot -Parent) 'driver\questlhsync'
+$driver = Join-Path $PSScriptRoot 'questlhsync'
+if (-not (Test-Path $driver)) { $driver = Join-Path (Split-Path $PSScriptRoot -Parent) 'driver\questlhsync' }
 $dll = Join-Path $driver 'bin\win64\driver_questlhsync.dll'
 if (-not $Remove -and -not (Test-Path $dll)) { Write-Host "no $dll yet: run build.bat first"; exit 1 }
 # SteamVR's runtime folder, from OpenVR's own path file

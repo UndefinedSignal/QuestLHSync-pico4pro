@@ -8,10 +8,11 @@ added. The headset side is a Magisk module that reads the PICO's tracking
 cameras.
 
 **Status: experimental.** Tested on one PICO 4 Pro (PICO OS 5.13.3S, streamed
-with Virtual Desktop) in a room with three 2.0 base stations. In that room it
-acquired in 1-2 minutes. It then held for 10+ minutes with a 0.2-0.4 deg median
-sighting error, about 1 cm and 0.15 deg of wander, and it picked up its saved
-alignment again after a restart. The PICO 4 (non-Pro) and other OS builds are
+with Virtual Desktop) in a room with three 2.0 base stations and ceiling
+lamps. In that room it acquires in 1-3 minutes, then holds through sessions of
+several hours (the longest 3.7 h) with a 0.2-0.3 deg median sighting error and a
+centimetre or two of wander. It picks up its saved alignment again after a
+SteamVR restart, and finds a new one by itself after a headset reboot. The PICO 4 (non-Pro) and other OS builds are
 untested.
 
 ## Requirements
@@ -30,10 +31,15 @@ untested.
 
 ## Install
 
+Both parts come ready-built in this fork's
+[releases](https://github.com/UndefinedSignal/QuestLHSync-pico4pro/releases):
+`QuestLHSync-pico-module-<version>.zip` for the headset and
+`QuestLHSync-pico-steamvr-<version>.zip` for the PC. Or build them yourself, as
+below.
+
 ### 1. Headset module
 
-Build it, or take `QuestLHSync-pico-module-<version>.zip` from this fork's
-releases when there is one:
+Take `QuestLHSync-pico-module-<version>.zip` from the releases, or build it:
 
 ```
 pip install ziglang
@@ -55,7 +61,15 @@ on TCP 47280, with discovery on UDP 47281.
 
 ### 2. PC driver
 
-In a clone of this fork (branch `pico-4-pro`), with SteamVR closed:
+From a release: unpack `QuestLHSync-pico-steamvr-<version>.zip` somewhere it can
+stay (SteamVR loads the driver from there), close SteamVR, and in the unpacked
+`QuestLHSync-pico` folder run:
+
+```
+powershell -executionpolicy bypass -file register_driver.ps1
+```
+
+Or build it, in a clone of this fork (branch `pico-4-pro`), with SteamVR closed:
 
 ```
 build.bat
@@ -199,7 +213,9 @@ clip moves it up one channel per press.
 - The timing (exposure to SteamVR pose) is learned only from sightings taken
   while the head turns fast. Those are rare on the PICO, so it usually stays at
   the 25 ms default. That is fine at ordinary head speeds.
-- No installer and no release builds for the PICO yet.
+- No installer for the PICO yet: the release's driver is registered with
+  `register_driver.ps1`. `python pico/release_pico.py` packs a release from
+  what `build.bat` and `pico/build_module.py` built.
 
 ## Credits
 
